@@ -1,0 +1,23 @@
+{
+  "feishuWebhook": "https://open.feishu.cn/open-apis/bot/v2/hook/9d0bff2d-2300-4e33-9183-80bf2481ff29",
+  "crawlSources": [
+    {
+      "name": "36Kr",
+      "url": "https://www.36kr.com/information/tech/",
+      "prompt": "提取科技新闻，返回标题和摘要，每条不超过30字"
+    },
+    {
+      "name": "新华网",
+      "url": "https://www.news.cn/",
+      "prompt": "提取汽车相关重要新闻，返回标题和摘要，每条不超过30字"
+    },
+    {
+      "name": "IoT商业新闻",
+      "url": "https://iotbusinessnews.com/",
+      "prompt": "提取IoT和车联网相关新闻，返回标题和摘要，每条不超过30字"
+    }
+  ],
+  "schedule": "0 0 8 * * *",
+  "port": 3000,
+  "adminPassword": "admin123"
+}
