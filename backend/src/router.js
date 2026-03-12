@@ -32,9 +32,19 @@ router.get('/news', (req, res) => {
 router.get('/news/search', (req, res) => {
   const { keyword, days, tag } = req.query;
   const articles = dbSearchArticles(keyword || null, days || null, tag || null);
+  // 转换字段名，适配前端
+  const mappedArticles = articles.map(a => ({
+    title: a.source_title,
+    source: a.source_name,
+    summary: a.source_summary,
+    url: a.url || a.source_link,
+    date: a.date,
+    tags: a.category ? [a.category] : [],
+    id: a.id
+  }));
   res.json({
-    articles,
-    total: articles.length,
+    articles: mappedArticles,
+    total: mappedArticles.length,
     tags: TAGS
   });
 });
