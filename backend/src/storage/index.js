@@ -22,6 +22,7 @@ db.exec(`
 
     -- 处理后字段
     url TEXT DEFAULT '',             -- 跳转链接
+    content_html TEXT DEFAULT '',    -- Readability 处理后的 HTML 内容
     score REAL DEFAULT 0.5,         -- 热度评分 (0-1)
     hot INTEGER DEFAULT 0,          -- 热度指数
 
@@ -72,8 +73,8 @@ export function saveArticles(articles, analysis = '') {
   }
 
   const insert = db.prepare(`
-    INSERT INTO articles (source_title, source_summary, source_name, source_link, source_date, source_cover, url, score, hot, category, date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO articles (source_title, source_summary, source_name, source_link, source_date, source_cover, url, content_html, score, hot, category, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertMany = db.transaction((articles) => {
@@ -86,6 +87,7 @@ export function saveArticles(articles, analysis = '') {
         article.source_date || '',
         article.source_cover || '',
         article.url || '',
+        article.content_html || '',
         article.score || 0.5,
         article.hot || 0,
         article.category || '',
@@ -129,6 +131,10 @@ export function updateArticle(id, data) {
   if (data.url !== undefined) {
     fields.push('url = ?');
     values.push(data.url);
+  }
+  if (data.content_html !== undefined) {
+    fields.push('content_html = ?');
+    values.push(data.content_html);
   }
 
   if (fields.length === 0) {

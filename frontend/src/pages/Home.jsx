@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { searchNews, getTags } from '../api';
 
 const TAGS = ['科技', '车联网', 'IoT'];
 
 function Home() {
+  const navigate = useNavigate();
   const [articles, setArticles] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -37,6 +39,10 @@ function Home() {
   const handleSearch = (e) => {
     e.preventDefault();
     fetchData();
+  };
+
+  const handleArticleClick = (article) => {
+    navigate(`/article/${article.id}`);
   };
 
   const formatDate = (dateStr) => {
@@ -144,7 +150,7 @@ function Home() {
             {articles.map((article, i) => {
               const sourceStyle = getSourceColor(article.source);
               return (
-                <li key={i} className="article-item">
+                <li key={i} className="article-item" onClick={() => handleArticleClick(article)}>
                   <div className="article-meta">
                     <span
                       className="source-tag"

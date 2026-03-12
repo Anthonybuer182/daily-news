@@ -3,6 +3,12 @@ import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import OpenAI from 'openai';
 import config from '../config.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ARTICLES_DIR = path.join(__dirname, '..', '..', 'data', 'articles');
 
 const openai = new OpenAI({
   apiKey: process.env.MINIMAX_API_KEY,
@@ -116,6 +122,7 @@ async function crawlSource(source) {
         const reader = new Readability(dom.window.document);
         const article = reader.parse();
         const articleText = article ? article.textContent : '';
+        const articleHtml = article ? article.content : ''; // Readability 处理后的 HTML
 
         await articlePage.close();
 
@@ -134,7 +141,8 @@ async function crawlSource(source) {
           const extracted = parseArticleResult(
             extractResult.choices[0]?.message?.content || '',
             source.name,
-            link
+            link,
+            articleHtml
           );
 
           if (extracted) {
@@ -231,8 +239,58 @@ ${articlesSummary}
   }
 }
 
+// 保存文章 HTML 内容到文件
+function saveArticleHtml(title, contentHtml) {
+  if (!contentHtml) return '';
+
+  // 确保目录存在
+  if (!fs.existsSync(ARTICLES_DIR)) {
+    fs.mkdirSync(ARTICLES_DIR, { recursive: true });
+  }
+
+  // 生成文件名（使用时间戳+随机数确保唯一）
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  const safeTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '').substring(0, 20);
+  const filename = `${safeTitle}_${timestamp}_${random}.html`;
+  const filepath = path.join(ARTICLES_DIR, filename);
+
+  // 构建完整的 HTML 文档
+  const htmlDocument = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.8;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    h1 { font-size: 1.5em; margin-bottom: 0.5em; }
+    img { max-width: 100%; height: auto; }
+    a { color: #1e40af; }
+    p { margin-bottom: 1em; }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${contentHtml}
+</body>
+</html>`;
+
+  fs.writeFileSync(filepath, htmlDocument, 'utf-8');
+
+  // 返回相对路径（用于 URL）
+  return `/articles/${filename}`;
+}
+
 // 解析详情页提取结果
-function parseArticleResult(text, sourceName, sourceLink) {
+function parseArticleResult(text, sourceName, sourceLink, contentHtml = '') {
   const lines = text.split('\n').filter(l => l.trim());
 
   // 尝试提取标题和摘要
@@ -262,6 +320,9 @@ function parseArticleResult(text, sourceName, sourceLink) {
     return null;
   }
 
+  // 保存 HTML 到文件，获取文件路径
+  const articleFileUrl = saveArticleHtml(title, contentHtml);
+
   return {
     source_title: title,
     source_summary: summary,
@@ -269,7 +330,8 @@ function parseArticleResult(text, sourceName, sourceLink) {
     source_link: sourceLink,
     source_date: '',
     source_cover: '',
-    url: sourceLink,
+    url: articleFileUrl || sourceLink,  // 优先使用文件链接
+    content_html: '',
     score: 0.5,
     hot: 0,
     category: '',

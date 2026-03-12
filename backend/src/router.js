@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles, updateArticle, deleteArticle, deleteArticles, getArticlesByDate } from './storage/index.js';
+import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles, updateArticle, deleteArticle, deleteArticles, getArticlesByDate, getArticleById } from './storage/index.js';
 import { runCrawl } from './scheduler/index.js';
 import config from './config.js';
 
@@ -51,6 +51,26 @@ router.get('/news/search', (req, res) => {
 
 router.get('/news/tags', (req, res) => {
   res.json({ tags: TAGS });
+});
+
+// 获取文章详情
+router.get('/article/:id', (req, res) => {
+  const article = getArticleById(parseInt(req.params.id));
+  if (!article) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.json({
+    id: article.id,
+    title: article.source_title,
+    source: article.source_name,
+    summary: article.source_summary,
+    url: article.url || article.source_link,
+    sourceLink: article.source_link,
+    date: article.date,
+    category: article.category,
+    contentHtml: article.content_html,
+    createdAt: article.createdAt
+  });
 });
 
 router.get('/news/:date', (req, res) => {

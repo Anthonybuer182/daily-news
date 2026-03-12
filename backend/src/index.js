@@ -19,6 +19,9 @@ app.use(express.json());
 // Serve admin page at /admin
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
+// Serve article HTML files
+app.use('/articles', express.static(path.join(__dirname, '..', 'data', 'articles')));
+
 // Redirect /settings to /admin
 app.get('/settings', (req, res) => {
   res.redirect('/admin');
