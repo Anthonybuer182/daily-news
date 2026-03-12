@@ -1,6 +1,12 @@
 import config from '../config.js';
 
 export async function sendToFeishu(articles) {
+  // 检查飞书推送是否启用
+  if (!config.feishuEnabled) {
+    console.log('飞书推送已关闭，跳过');
+    return;
+  }
+
   if (!config.feishuWebhook) {
     console.log('飞书 WebHook 未配置，跳过推送');
     return;
@@ -26,12 +32,16 @@ export async function sendToFeishu(articles) {
 
 function buildMessage(articles) {
   const date = new Date().toLocaleDateString('zh-CN');
-  const articleList = articles.map((a, i) => `${i + 1}. [${a.source}] ${a.title}`).join('\n');
+  const articleList = articles.map((a, i) => {
+    const title = a.source_title || a.title || '无标题';
+    const source = a.source_name || a.source || '';
+    return `${i + 1}. [${source}] ${title}`;
+  }).join('\n');
 
   return {
     msg_type: 'text',
     content: {
-      text: `📰 每日晨报 ${date}\n\n${articleList}\n\n查看详情: http://localhost:5173`
+      text: `📰 热点资讯 ${date}\n\n${articleList}\n\n查看详情: http://localhost:5173`
     }
   };
 }

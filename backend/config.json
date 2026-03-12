@@ -1,11 +1,7 @@
 {
-  "feishuWebhook": "https://open.feishu.cn/open-apis/bot/v2/hook/9d0bff2d-2300-4e33-9183-80bf2481ff29",
+  "feishuEnabled": true,
+  "feishuWebhook": "https://open.feishu.cn/open-apis/bot/v2/hook/c0ec802c-5106-481c-8676-ef6cd3720322",
   "crawlSources": [
-    {
-      "name": "36Kr",
-      "url": "https://www.36kr.com/information/tech/",
-      "prompt": "提取科技新闻，返回标题和摘要，每条不超过30字"
-    },
     {
       "name": "新华网",
       "url": "https://www.news.cn/",

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>每日晨报 - 管理后台</title>
+  <title>热点资讯 - 管理后台</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
@@ -26,6 +26,44 @@
     .error { color: #ff4d4f; margin-top: 10px; }
     .login-page { max-width: 400px; margin: 100px auto; text-align: center; }
     .hint { color: #999; font-size: 12px; margin-top: 20px; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: 0.3s; border-radius: 24px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
+    input:checked + .slider { background-color: #52c41a; }
+    input:checked + .slider:before { transform: translateX(24px); }
+    .form-row { display: flex; align-items: center; gap: 10px; }
+    .nav { display: flex; gap: 10px; margin-bottom: 20px; }
+    .nav button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; background: #ddd; }
+    .nav button.active { background: #1890ff; color: white; }
+    .search-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+    .search-bar input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    .search-bar button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; background: #1890ff; color: white; }
+    .article-list { background: white; border-radius: 8px; overflow: hidden; }
+    .article-list table { width: 100%; border-collapse: collapse; }
+    .article-list th, .article-list td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    .article-list th { background: #f5f5f5; font-weight: 500; }
+    .article-list tr:hover { background: #fafafa; }
+    .article-list .checkbox { width: 30px; }
+    .article-list .actions { display: flex; gap: 5px; }
+    .article-list .actions button { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .article-list .actions .edit { background: #1890ff; color: white; }
+    .article-list .actions .delete { background: #ff4d4f; color: white; }
+    .batch-actions { display: flex; gap: 10px; margin-bottom: 15px; }
+    .batch-actions button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
+    .batch-actions .delete-all { background: #ff4d4f; color: white; }
+    .batch-actions .select-all { background: #ddd; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; padding: 20px; border-radius: 8px; width: 500px; max-height: 80vh; overflow-y: auto; }
+    .modal-content h3 { margin-bottom: 15px; }
+    .modal-content .form-group { margin-bottom: 15px; }
+    .modal-content .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+    .modal-content .form-group input, .modal-content .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    .modal-content .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+    .modal-content .modal-btns button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
+    .modal-content .modal-btns .cancel { background: #ddd; }
+    .modal-content .modal-btns .save { background: #52c41a; color: white; }
+    .empty { text-align: center; padding: 40px; color: #999; }
   </style>
 </head>
 <body>
@@ -36,13 +74,213 @@
     let sources = [];
     let schedule = '';
     let adminToken = localStorage.getItem('adminToken') || '';
+    let currentPage = 'settings'; // settings 或 articles
+    let articles = [];
+    let selectedIds = new Set();
+    let editingArticle = null;
 
     function render() {
       if (!adminToken) {
         renderLogin();
       } else {
+        if (currentPage === 'articles') {
+          renderArticleList();
+        } else {
+          renderSettings();
+        }
+      }
+    }
+
+    function renderNav() {
+      return `
+        <div class="nav">
+          <button class="${currentPage === 'settings' ? 'active' : ''}" onclick="goToPage('settings')">系统配置</button>
+          <button class="${currentPage === 'articles' ? 'active' : ''}" onclick="goToPage('articles')">资讯管理</button>
+        </div>
+      `;
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      if (page === 'articles') {
+        loadArticles();
+      } else {
         renderSettings();
       }
+    }
+
+    async function loadArticles(keyword = '') {
+      const url = keyword ? `${API_BASE}/news/search?keyword=${encodeURIComponent(keyword)}` : `${API_BASE}/news/search?days=30`;
+      const res = await fetch(url);
+      const data = await res.json();
+      articles = data.articles || [];
+      selectedIds = new Set();
+      renderArticleList();
+    }
+
+    function renderArticleList() {
+      const rows = articles.map(a => `
+        <tr>
+          <td class="checkbox"><input type="checkbox" ${selectedIds.has(a.id) ? 'checked' : ''} onchange="toggleSelect(${a.id})"></td>
+          <td>${a.id}</td>
+          <td>${a.source_title || '-'}</td>
+          <td>${a.source_name || '-'}</td>
+          <td>${a.category || '-'}</td>
+          <td>${a.date || '-'}</td>
+          <td class="actions">
+            <button class="edit" onclick="editArticle(${a.id})">编辑</button>
+            <button class="delete" onclick="deleteArticle(${a.id})">删除</button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('app').innerHTML = `
+        ${renderNav()}
+        <h2>资讯管理</h2>
+        <div class="search-bar">
+          <input type="text" id="searchKeyword" placeholder="搜索标题..." onkeydown="event.key==='Enter'&&searchArticles()">
+          <button onclick="searchArticles()">搜索</button>
+        </div>
+        <div class="batch-actions">
+          <button class="select-all" onclick="toggleSelectAll()">全选</button>
+          <button class="delete-all" onclick="batchDelete()" ${selectedIds.size === 0 ? 'disabled' : ''}>删除选中 (${selectedIds.size})</button>
+        </div>
+        <div class="article-list">
+          <table>
+            <thead>
+              <tr>
+                <th class="checkbox"><input type="checkbox" onchange="toggleSelectAll()"></th>
+                <th>ID</th>
+                <th>标题</th>
+                <th>来源</th>
+                <th>分类</th>
+                <th>日期</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="7" class="empty">暂无资讯</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        <div id="modal"></div>
+      `;
+    }
+
+    function toggleSelect(id) {
+      if (selectedIds.has(id)) {
+        selectedIds.delete(id);
+      } else {
+        selectedIds.add(id);
+      }
+      renderArticleList();
+    }
+
+    function toggleSelectAll() {
+      if (selectedIds.size === articles.length) {
+        selectedIds.clear();
+      } else {
+        selectedIds = new Set(articles.map(a => a.id));
+      }
+      renderArticleList();
+    }
+
+    async function searchArticles() {
+      const keyword = document.getElementById('searchKeyword').value;
+      await loadArticles(keyword);
+    }
+
+    function editArticle(id) {
+      const article = articles.find(a => a.id === id);
+      if (!article) return;
+      editingArticle = article;
+
+      document.getElementById('modal').innerHTML = `
+        <div class="modal">
+          <div class="modal-content">
+            <h3>编辑资讯</h3>
+            <div class="form-group">
+              <label>标题</label>
+              <input type="text" id="editTitle" value="${(article.source_title || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="form-group">
+              <label>摘要</label>
+              <textarea id="editSummary" rows="3">${(article.source_summary || '').replace(/"/g, '&quot;')}</textarea>
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <input type="text" id="editCategory" value="${(article.category || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="form-group">
+              <label>原文链接</label>
+              <input type="text" id="editUrl" value="${(article.source_link || '').replace(/"/g, '&quot;')}">
+            </div>
+            <div class="modal-btns">
+              <button class="cancel" onclick="closeModal()">取消</button>
+              <button class="save" onclick="saveArticle()">保存</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveArticle() {
+      const data = {
+        source_title: document.getElementById('editTitle').value,
+        source_summary: document.getElementById('editSummary').value,
+        category: document.getElementById('editCategory').value,
+        url: document.getElementById('editUrl').value
+      };
+
+      const res = await fetch(`${API_BASE}/articles/${editingArticle.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+        body: JSON.stringify(data)
+      });
+
+      if (res.ok) {
+        closeModal();
+        loadArticles(document.getElementById('searchKeyword')?.value || '');
+      } else {
+        alert('保存失败');
+      }
+    }
+
+    async function deleteArticle(id) {
+      if (!confirm('确定要删除这条资讯吗？')) return;
+
+      const res = await fetch(`${API_BASE}/articles/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + adminToken }
+      });
+
+      if (res.ok) {
+        loadArticles(document.getElementById('searchKeyword')?.value || '');
+      } else {
+        alert('删除失败');
+      }
+    }
+
+    async function batchDelete() {
+      if (selectedIds.size === 0) return;
+      if (!confirm(`确定要删除选中的 ${selectedIds.size} 条资讯吗？`)) return;
+
+      const res = await fetch(`${API_BASE}/articles/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+        body: JSON.stringify({ ids: Array.from(selectedIds) })
+      });
+
+      if (res.ok) {
+        loadArticles(document.getElementById('searchKeyword')?.value || '');
+      } else {
+        alert('批量删除失败');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modal').innerHTML = '';
+      editingArticle = null;
     }
 
     function renderLogin() {
@@ -70,6 +308,10 @@
       config = await res.json();
       sources = config.crawlSources || [];
       schedule = config.schedule || '';
+      // 默认 feishuEnabled 为 true
+      if (config.feishuEnabled === undefined) {
+        config.feishuEnabled = true;
+      }
       renderSettings();
     }
 
@@ -87,8 +329,18 @@
         </li>
       `).join('');
 
-      document.getElementById('app').innerHTML = `
+      document.getElementById('app').innerHTML = renderNav() + `
         <h2>系统配置</h2>
+        <div class="form-group">
+          <label>飞书推送:</label>
+          <div class="form-row">
+            <label class="switch">
+              <input type="checkbox" id="feishuEnabled" ${config.feishuEnabled ? 'checked' : ''}>
+              <span class="slider"></span>
+            </label>
+            <span>${config.feishuEnabled ? '已启用' : '已禁用'}</span>
+          </div>
+        </div>
         <div class="form-group">
           <label>飞书 WebHook:</label>
           <input type="text" id="feishuWebhook" placeholder="${config.feishuConfigured ? '已配置 (留空不修改)' : '输入 WebHook 地址'}">
@@ -135,12 +387,13 @@
 
     async function saveConfig() {
       const feishuWebhook = document.getElementById('feishuWebhook').value;
+      const feishuEnabled = document.getElementById('feishuEnabled').checked;
       const schedule = document.getElementById('schedule').value;
 
       const res = await fetch(API_BASE + '/config/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-        body: JSON.stringify({ feishuWebhook, schedule, crawlSources: sources })
+        body: JSON.stringify({ feishuWebhook, feishuEnabled, schedule, crawlSources: sources })
       });
 
       if (res.ok) {

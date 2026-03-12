@@ -58,6 +58,9 @@ async function crawlSource(source) {
 
     const titles = parseResult(extractResult.choices[0]?.message?.content || '', source.name);
 
+    // 检测并翻译英文标题为中文
+    const translatedTitles = await translateTitles(titles);
+
     // 对该来源进行简要分析
     const analysisPrompt = `作为科技资讯分析师，请对以下新闻进行简要分析（2-3句话）：\n\n${titles.map(t => `- ${t.title}`).join('\n')}`;
 
@@ -69,10 +72,10 @@ async function crawlSource(source) {
       max_tokens: 500
     });
 
-    console.log(`[${source.name}] 抓取完成: ${titles.length} 条`);
+    console.log(`[${source.name}] 抓取完成: ${translatedTitles.length} 条`);
 
     return {
-      articles: titles,
+      articles: translatedTitles,
       analysis: analysisResult.choices[0]?.message?.content || ''
     };
   } finally {
@@ -122,20 +125,84 @@ function parseResult(text, sourceName) {
     const match = line.match(/^\d+\.?\s*(.+)/);
     if (match) {
       articles.push({
-        title: match[1].trim(),           // 标题 - 新闻文章的标题
-        summary: '',                       // 摘要 - 新闻内容的简要描述
-        source: sourceName,                // 来源 - 新闻发布来源/媒体
-        source_link: '',                   // 来源链接 - 新闻原文链接
-        source_date: '',                   // 来源日期 - 新闻发布日期
-        source_cover: '',                  // 来源封面 - 新闻封面图片URL
-        url: '',                           // 文章URL - 跳转链接
-        score: 0.5,                       // 评分 - 新闻热度评分 (0-1)
-        hot: 0,                            // 热度 - 热度指数
-        category: '',                      // 分类 - 新闻分类
-        date: new Date().toISOString().split('T')[0]  // 日期 - 数据日期 (格式: YYYY-MM-DD)
+        source_title: match[1].trim(),    // 原始来源标题
+        source_summary: '',               // 原始来源摘要
+        source_name: sourceName,          // 来源名称（媒体/网站名称）
+        source_link: '',                  // 原文链接
+        source_date: '',                  // 原文发布日期
+        source_cover: '',                 // 封面图片URL
+        url: '',                          // 跳转链接
+        score: 0.5,                      // 热度评分 (0-1)
+        hot: 0,                           // 热度指数
+        category: '',                     // 新闻分类
+        date: new Date().toISOString().split('T')[0]  // 数据日期 (格式: YYYY-MM-DD)
       });
     }
   }
 
   return articles;
+}
+
+// 检测文本是否为英文（包含超过50%的英文字符）
+function isEnglish(text) {
+  const englishChars = (text.match(/[a-zA-Z]/g) || []).length;
+  const totalChars = text.replace(/[\s\d]/g, '').length;
+  return totalChars > 0 && englishChars / totalChars > 0.5;
+}
+
+// 翻译英文标题为中文
+async function translateTitles(articles) {
+  if (!articles || articles.length === 0) {
+    return articles;
+  }
+
+  const englishArticles = articles.filter(a => a.source_title && isEnglish(a.source_title));
+
+  if (englishArticles.length === 0) {
+    console.log(`[翻译] 没有检测到英文标题`);
+    return articles;
+  }
+
+  console.log(`[翻译] 检测到 ${englishArticles.length} 条英文标题，开始翻译...`);
+  console.log(`[翻译] 英文标题: ${englishArticles.map(a => a.source_title).join(', ')}`);
+
+  const titlesToTranslate = englishArticles.map(a => a.source_title).join('\n');
+
+  const translatePrompt = `请将以下英文科技新闻标题翻译成中文。只返回翻译后的标题，每行一个，不要添加任何解释或编号：
+
+${titlesToTranslate}`;
+
+  try {
+    const result = await openai.chat.completions.create({
+      model: 'abab6.5s-chat',
+      messages: [
+        { role: 'user', content: translatePrompt }
+      ],
+      max_tokens: 2000
+    });
+
+    const translatedText = result.choices[0]?.message?.content || '';
+    const translatedTitles = translatedText.split('\n').map(t => t.replace(/^\d+\.?\s*/, '').trim()).filter(t => t);
+
+    // 替换英文标题为中文
+    const translatedMap = new Map();
+    englishArticles.forEach((article, index) => {
+      if (translatedTitles[index]) {
+        translatedMap.set(article.source_title, translatedTitles[index]);
+      }
+    });
+
+    return articles.map(article => {
+      if (translatedMap.has(article.source_title)) {
+        return {
+          ...article,
+          source_title: translatedMap.get(article.source_title)
+        };
+      }
+      return article;
+    });
+  } catch (error) {
+    console.error('翻译失败:', error.message);
+    return articles;
+  }
 }

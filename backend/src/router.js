@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles } from './storage/index.js';
+import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles, updateArticle, deleteArticle, deleteArticles, getArticlesByDate } from './storage/index.js';
 import { runCrawl } from './scheduler/index.js';
 import config from './config.js';
 
@@ -51,6 +51,35 @@ router.get('/news/:date', (req, res) => {
   res.json(news);
 });
 
+// 资讯管理 API（需要认证）
+router.put('/articles/:id', requireAuth, express.json(), (req, res) => {
+  const result = updateArticle(parseInt(req.params.id), req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
+});
+
+router.delete('/articles/:id', requireAuth, (req, res) => {
+  const result = deleteArticle(parseInt(req.params.id));
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
+});
+
+router.post('/articles/batch-delete', requireAuth, express.json(), (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: '请选择要删除的资讯' });
+  }
+  const result = deleteArticles(ids.map(id => parseInt(id)));
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true, count: result.count });
+});
+
 router.post('/crawl', async (req, res) => {
   await runCrawl();
   res.json({ success: true });
@@ -71,6 +100,9 @@ router.post('/config/save', requireAuth, express.json(), (req, res) => {
 
     if ('feishuWebhook' in req.body) {
       newConfig.feishuWebhook = req.body.feishuWebhook || '';
+    }
+    if ('feishuEnabled' in req.body) {
+      newConfig.feishuEnabled = req.body.feishuEnabled;
     }
     if (req.body.schedule) {
       newConfig.schedule = req.body.schedule;
