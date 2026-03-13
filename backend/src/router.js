@@ -179,7 +179,7 @@ router.get('/sources/:id', (req, res) => {
 
 // 创建数据源
 router.post('/sources', requireAuth, express.json(), (req, res) => {
-  const { id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order } = req.body;
+  const { id, name, enabled, domain, entry_urls, flow, transform, filters, prompt, sort_order } = req.body;
 
   if (!id || !name) {
     return res.status(400).json({ error: 'ID 和名称不能为空' });
@@ -192,7 +192,7 @@ router.post('/sources', requireAuth, express.json(), (req, res) => {
   }
 
   const result = createSource({
-    id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order
+    id, name, enabled, domain, entry_urls, flow, transform, filters, prompt, sort_order
   });
 
   if (!result.success) {

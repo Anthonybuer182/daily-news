@@ -44,14 +44,13 @@ db.exec(`
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     enabled INTEGER DEFAULT 1,
-    site_type VARCHAR(20) DEFAULT 'news',
-    base_url VARCHAR(500),
+    domain VARCHAR(500),
 
-    -- 导航配置 (JSON)
-    navigation TEXT DEFAULT '{}',
+    -- 入口 URL (JSON 数组)
+    entry_urls TEXT DEFAULT '[]',
 
-    -- 内容提取配置 (JSON)
-    content TEXT DEFAULT '{}',
+    -- 流程配置 (JSON 数组)
+    flow TEXT DEFAULT '[]',
 
     -- 数据转换配置 (JSON)
     transform TEXT DEFAULT '{}',
@@ -286,8 +285,8 @@ export function getAllSources() {
   return rows.map(row => ({
     ...row,
     enabled: row.enabled === 1,
-    navigation: parseJsonField(row.navigation),
-    content: parseJsonField(row.content),
+    entry_urls: parseJsonField(row.entry_urls),
+    flow: parseJsonField(row.flow),
     transform: parseJsonField(row.transform),
     filters: parseJsonField(row.filters)
   }));
@@ -299,8 +298,8 @@ export function getEnabledSources() {
   return rows.map(row => ({
     ...row,
     enabled: true,
-    navigation: parseJsonField(row.navigation),
-    content: parseJsonField(row.content),
+    entry_urls: parseJsonField(row.entry_urls),
+    flow: parseJsonField(row.flow),
     transform: parseJsonField(row.transform),
     filters: parseJsonField(row.filters)
   }));
@@ -313,8 +312,8 @@ export function getSourceById(id) {
   return {
     ...row,
     enabled: row.enabled === 1,
-    navigation: parseJsonField(row.navigation),
-    content: parseJsonField(row.content),
+    entry_urls: parseJsonField(row.entry_urls),
+    flow: parseJsonField(row.flow),
     transform: parseJsonField(row.transform),
     filters: parseJsonField(row.filters)
   };
@@ -326,10 +325,9 @@ export function createSource(data) {
     id,
     name,
     enabled = true,
-    site_type = 'news',
-    base_url = '',
-    navigation = {},
-    content = {},
+    domain = '',
+    entry_urls = [],
+    flow = [],
     transform = {},
     filters = {},
     prompt = '',
@@ -338,16 +336,15 @@ export function createSource(data) {
 
   try {
     db.prepare(`
-      INSERT INTO sources (id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sources (id, name, enabled, domain, entry_urls, flow, transform, filters, prompt, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
       enabled ? 1 : 0,
-      site_type,
-      base_url,
-      JSON.stringify(navigation),
-      JSON.stringify(content),
+      domain,
+      JSON.stringify(entry_urls),
+      JSON.stringify(flow),
       JSON.stringify(transform),
       JSON.stringify(filters),
       prompt,
@@ -372,21 +369,17 @@ export function updateSource(id, data) {
     fields.push('enabled = ?');
     values.push(data.enabled ? 1 : 0);
   }
-  if (data.site_type !== undefined) {
-    fields.push('site_type = ?');
-    values.push(data.site_type);
+  if (data.domain !== undefined) {
+    fields.push('domain = ?');
+    values.push(data.domain);
   }
-  if (data.base_url !== undefined) {
-    fields.push('base_url = ?');
-    values.push(data.base_url);
+  if (data.entry_urls !== undefined) {
+    fields.push('entry_urls = ?');
+    values.push(JSON.stringify(data.entry_urls));
   }
-  if (data.navigation !== undefined) {
-    fields.push('navigation = ?');
-    values.push(JSON.stringify(data.navigation));
-  }
-  if (data.content !== undefined) {
-    fields.push('content = ?');
-    values.push(JSON.stringify(data.content));
+  if (data.flow !== undefined) {
+    fields.push('flow = ?');
+    values.push(JSON.stringify(data.flow));
   }
   if (data.transform !== undefined) {
     fields.push('transform = ?');

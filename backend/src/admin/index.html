@@ -95,6 +95,20 @@
     .step-item { background: white; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; }
     .step-item .step-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .step-item .step-number { font-weight: 600; }
+    .step-type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
+    .step-type-badge.navigation { background: #e6f7ff; color: #1890ff; }
+    .step-type-badge.list_extraction { background: #f6ffed; color: #52c41a; }
+    .step-type-badge.detail_extraction { background: #fff7e6; color: #fa8c16; }
+    .flow-step { background: #f9f9f9; padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #1890ff; }
+    .flow-step-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .flow-step-actions { display: flex; gap: 5px; }
+    .action-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .action-row .form-group { flex: 1; min-width: 150px; margin-bottom: 0; }
+    .entry-urls-list { margin-bottom: 10px; }
+    .entry-url-item { display: flex; gap: 5px; margin-bottom: 5px; }
+    .entry-url-item input { flex: 1; }
+    .entry-url-item .btn-remove { padding: 4px 8px; background: #ff4d4f; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .add-url-btn { background: #52c41a; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -244,8 +258,8 @@
       container.innerHTML = sources.map(s => `
         <div class="source-card ${s.enabled ? '' : 'disabled'}">
           <div class="card-header"><div class="card-title">${s.name}</div><label class="switch"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSource('${s.id}')"><span class="slider"></span></label></div>
-          <div class="card-url">${s.base_url || s.navigation?.url || '-'}</div>
-          <div class="nav-type">${getNavTypeName(s.navigation?.type)}</div>
+          <div class="card-url">${(s.entry_urls && s.entry_urls.length > 0) ? s.entry_urls[0] : (s.domain || '-')}</div>
+          <div class="nav-type">${getFlowStepsSummary(s.flow)}</div>
           <div class="card-actions">
             <button class="edit-btn" onclick="editSource('${s.id}')">编辑</button>
             <button class="delete-btn" onclick="deleteSource('${s.id}')">删除</button>
@@ -253,7 +267,12 @@
         </div>`).join('');
     }
 
-    function getNavTypeName(type) { const names = { 'single-page': '单页列表', 'multi-step': '多步导航', 'list-detail': '列表+详情' }; return names[type] || '单页列表'; }
+    function getFlowStepsSummary(flow) {
+      if (!flow || flow.length === 0) return '未配置流程';
+      return flow.map(f => `<span class="step-type-badge ${f.type}">${getStepTypeName(f.type)}</span>`).join(' ');
+    }
+
+    function getStepTypeName(type) { const names = { 'navigation': '导航', 'list_extraction': '列表提取', 'detail_extraction': '详情提取' }; return names[type] || type; }
 
     async function toggleSource(id) { await fetch(API_BASE + '/sources/' + id + '/toggle', { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken } }); loadSources(); }
 
@@ -267,7 +286,9 @@
 
     function showSourceModal(source) {
       const isEdit = !!editingSourceId;
-      const navType = source.navigation?.type || 'single-page';
+      const entryUrls = source.entry_urls || [];
+      const flow = source.flow || [];
+
       document.getElementById('modal').innerHTML = `
         <div class="modal show">
           <div class="modal-content">
@@ -278,21 +299,33 @@
                 <div class="form-group"><label>名称</label><input type="text" id="sourceName" value="${source.name || ''}" placeholder="如: 新华网"></div>
               </div>
               <div class="config-row">
-                <div class="form-group"><label>网站类型</label><select id="sourceSiteType"><option value="news" ${source.site_type === 'news' ? 'selected' : ''}>新闻</option><option value="blog" ${source.site_type === 'blog' ? 'selected' : ''}>博客</option><option value="forum" ${source.site_type === 'forum' ? 'selected' : ''}>论坛</option></select></div>
-                <div class="form-group"><label>基础URL</label><input type="text" id="sourceBaseUrl" value="${source.base_url || ''}" placeholder="https://example.com"></div>
+                <div class="form-group"><label>域名</label><input type="text" id="sourceDomain" value="${source.domain || ''}" placeholder="如: news.example.com"></div>
+                <div class="form-group"><label>排序</label><input type="number" id="sourceSortOrder" value="${source.sort_order || 0}" min="0"></div>
               </div>
             </div>
-            <div class="config-section"><h4>导航配置</h4>
-              <div class="radio-group">
-                <label><input type="radio" name="navType" value="single-page" ${navType === 'single-page' ? 'checked' : ''}> 单页列表</label>
-                <label><input type="radio" name="navType" value="multi-step" ${navType === 'multi-step' ? 'checked' : ''}> 多步导航</label>
-                <label><input type="radio" name="navType" value="list-detail" ${navType === 'list-detail' ? 'checked' : ''}> 列表+详情</label>
+            <div class="config-section"><h4>入口 URLs</h4>
+              <div class="entry-urls-list" id="entryUrlsList">
+                ${entryUrls.map((url, i) => `
+                  <div class="entry-url-item">
+                    <input type="text" class="entry-url-input" value="${escapeHtml(url)}" placeholder="https://example.com/news">
+                    ${i > 0 ? `<button class="btn-remove" onclick="removeEntryUrl(${i})">×</button>` : ''}
+                  </div>
+                `).join('')}
               </div>
-              <div id="navConfigContainer"></div>
+              <button class="add-url-btn" onclick="addEntryUrl()">+ 添加 URL</button>
             </div>
-            <div class="config-section"><h4>内容提取</h4>
-              <div class="form-group"><label>列表选择器 (CSS)</label><input type="text" id="listSelector" value="${source.content?.list?.selector || ''}" placeholder="如: article.item, .news-list li"></div>
-              <div class="form-group"><label>使用 Readability 提取详情<label class="switch" style="margin-left:10px"><input type="checkbox" id="useReadability" ${source.content?.detail?.useReadability !== false ? 'checked' : ''}><span class="slider"></span></label></label></div>
+            <div class="config-section"><h4>流程配置</h4>
+              <div id="flowStepsContainer">
+                ${flow.map((step, i) => renderFlowStepEditor(step, i)).join('')}
+              </div>
+              <div style="margin-top:10px;">
+                <select id="addStepType" style="margin-right:10px;padding:6px;">
+                  <option value="list_extraction">列表提取</option>
+                  <option value="detail_extraction">详情提取</option>
+                  <option value="navigation">导航操作</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="addFlowStep()">+ 添加步骤</button>
+              </div>
             </div>
             <div class="config-section"><h4>LLM 配置</h4>
               <div class="form-group"><label>提取提示词</label><textarea id="sourcePrompt" rows="3" placeholder="从文章中提取标题和摘要的提示词">${source.prompt || ''}</textarea><small>如: 提取汽车相关重要新闻，返回标题和摘要，每条不超过30字</small></div>
@@ -300,42 +333,193 @@
             <div class="modal-btns"><button class="cancel" onclick="closeModal()">取消</button><button class="save" onclick="saveSource()">保存</button></div>
           </div>
         </div>`;
-      renderNavConfig(source.navigation || {}, navType);
-      document.querySelectorAll('input[name="navType"]').forEach(radio => { radio.addEventListener('change', (e) => { renderNavConfig({}, e.target.value); }); });
     }
 
-    function renderNavConfig(navigation, type) {
-      const container = document.getElementById('navConfigContainer');
-      if (type === 'single-page') container.innerHTML = '<div class="form-group"><label>页面URL</label><input type="text" id="navUrl" value="' + (navigation.url || '') + '" placeholder="https://example.com/news"></div>';
-      else if (type === 'list-detail') container.innerHTML = '<div class="form-group"><label>列表页URL</label><input type="text" id="navListUrl" value="' + (navigation.listUrl || '') + '" placeholder="https://example.com/list"></div><div class="form-group"><label>列表选择器</label><input type="text" id="navListSelector" value="' + (navigation.listSelector || '') + '" placeholder="article a, .news-list a"></div><div class="form-group"><label>最大条目数</label><input type="number" id="navMaxItems" value="' + (navigation.maxItems || 10) + '" min="1" max="50"></div>';
-      else if (type === 'multi-step') {
-        const steps = navigation.steps || [{ name: 'home', url: '', actions: [] }];
-        container.innerHTML = '<div id="stepsContainer">' + steps.map((step, i) => renderStepEditor(step, i)).join('') + '</div><button class="btn btn-secondary btn-sm" onclick="addStep()">+ 添加步骤</button>';
+    function escapeHtml(text) {
+      return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderFlowStepEditor(step, index) {
+      const type = step.type || 'list_extraction';
+      return `
+        <div class="flow-step" data-index="${index}">
+          <div class="flow-step-header">
+            <span class="step-number">步骤 ${index + 1}: <span class="step-type-badge ${type}">${getStepTypeName(type)}</span></span>
+            <div class="flow-step-actions">
+              <button class="btn btn-danger btn-sm" onclick="removeFlowStep(${index})">删除</button>
+            </div>
+          </div>
+          <div class="form-group"><label>步骤类型</label>
+            <select class="step-type-select" onchange="updateFlowStepType(${index}, this.value)">
+              <option value="list_extraction" ${type === 'list_extraction' ? 'selected' : ''}>列表提取</option>
+              <option value="detail_extraction" ${type === 'detail_extraction' ? 'selected' : ''}>详情提取</option>
+              <option value="navigation" ${type === 'navigation' ? 'selected' : ''}>导航操作</option>
+            </select>
+          </div>
+          <div class="form-group"><label>步骤名称</label><input type="text" class="step-name" value="${escapeHtml(step.step_name || step.name || '')}" placeholder="如: 获取列表页"></div>
+          ${renderStepConfigFields(step, type)}
+        </div>`;
+    }
+
+    function renderStepConfigFields(step, type) {
+      if (type === 'list_extraction') {
+        const action = step.action || {};
+        return `
+          <div class="config-row">
+            <div class="form-group"><label>等待元素</label><input type="text" class="action-wait-for" value="${action.wait_for || ''}" placeholder="如: .article-list"></div>
+            <div class="form-group"><label>列表项选择器</label><input type="text" class="action-item-selector" value="${action.item_selector || ''}" placeholder="如: .news-list li"></div>
+          </div>
+          <div class="config-row">
+            <div class="form-group"><label>标题选择器</label><input type="text" class="action-title-selector" value="${action.title_selector || ''}" placeholder="如: h3 a"></div>
+            <div class="form-group"><label>链接选择器</label><input type="text" class="action-link-selector" value="${action.link_selector || ''}" placeholder="如: h3 a"></div>
+          </div>
+          <div class="config-row">
+            <div class="form-group"><label>摘要选择器</label><input type="text" class="action-summary-selector" value="${action.summary_selector || ''}" placeholder="如: .desc"></div>
+            <div class="form-group"><label>封面选择器</label><input type="text" class="action-cover-selector" value="${action.cover_selector || ''}" placeholder="如: img"></div>
+          </div>
+          <h5 style="margin:10px 0 5px;">分页配置</h5>
+          <div class="config-row">
+            <div class="form-group"><label>分页类型</label>
+              <select class="pagination-type">
+                <option value="" ${(!step.pagination || !step.pagination.type) ? 'selected' : ''}>无</option>
+                <option value="click_next" ${step.pagination?.type === 'click_next' ? 'selected' : ''}>点击下一页</option>
+                <option value="scroll" ${step.pagination?.type === 'scroll' ? 'selected' : ''}>滚动加载</option>
+              </select>
+            </div>
+            <div class="form-group"><label>下一页按钮选择器</label><input type="text" class="pagination-next-btn" value="${step.pagination?.next_button_selector || ''}" placeholder="如: .pagination .next"></div>
+          </div>
+          <div class="config-row">
+            <div class="form-group"><label>最大页数</label><input type="number" class="pagination-max-pages" value="${step.pagination?.max_pages || 3}" min="1" max="20"></div>
+            <div class="form-group"><label>等待时间 (ms)</label><input type="number" class="pagination-wait" value="${step.pagination?.wait_after || 2000}" min="500"></div>
+          </div>`;
+      } else if (type === 'detail_extraction') {
+        return `
+          <div class="form-group"><label>使用 Readability 自动提取</label>
+            <label class="switch"><input type="checkbox" class="use-readability" ${step.use_readability !== false ? 'checked' : ''}><span class="slider"></span></label>
+          </div>
+          <div class="form-group"><label>备用选择器</label><input type="text" class="fallback-selector" value="${step.fallback_selector || ''}" placeholder="如: article"></div>`;
+      } else if (type === 'navigation') {
+        const action = step.action || {};
+        return `
+          <div class="config-row">
+            <div class="form-group"><label>点击选择器</label><input type="text" class="action-click" value="${action.click || ''}" placeholder="如: .nav-tech"></div>
+            <div class="form-group"><label>滚动距离</label><input type="text" class="action-scroll" value="${action.scroll || ''}" placeholder="如: 500"></div>
+          </div>
+          <div class="config-row">
+            <div class="form-group"><label>移除元素</label><input type="text" class="action-remove" value="${action.remove || ''}" placeholder="如: .popup,.ad"></div>
+            <div class="form-group"><label>等待时间 (ms)</label><input type="number" class="action-wait-after" value="${action.wait_after || 2000}" min="0"></div>
+          </div>`;
+      }
+      return '';
+    }
+
+    function addEntryUrl() {
+      const container = document.getElementById('entryUrlsList');
+      const div = document.createElement('div');
+      div.className = 'entry-url-item';
+      div.innerHTML = `<input type="text" class="entry-url-input" placeholder="https://example.com/news"><button class="btn-remove" onclick="this.parentElement.remove()">×</button>`;
+      container.appendChild(div);
+    }
+
+    function removeEntryUrl(index) {
+      const container = document.getElementById('entryUrlsList');
+      const items = container.querySelectorAll('.entry-url-item');
+      if (items[index]) items[index].remove();
+    }
+
+    function addFlowStep() {
+      const type = document.getElementById('addStepType').value;
+      const container = document.getElementById('flowStepsContainer');
+      const index = container.children.length;
+      const step = { type, step_name: '', action: {} };
+      container.insertAdjacentHTML('beforeend', renderFlowStepEditor(step, index));
+    }
+
+    function removeFlowStep(index) {
+      const container = document.getElementById('flowStepsContainer');
+      const steps = container.querySelectorAll('.flow-step');
+      if (steps[index]) steps[index].remove();
+      // 重新编号
+      Array.from(steps).forEach((step, i) => {
+        if (i !== index && i > index) {
+          step.dataset.index = i - 1;
+          step.querySelector('.step-number').textContent = `步骤 ${i}: `;
+          step.querySelector('.step-type-badge');
+        }
+      });
+    }
+
+    function updateFlowStepType(index, newType) {
+      const container = document.getElementById('flowStepsContainer');
+      const steps = container.querySelectorAll('.flow-step');
+      if (steps[index]) {
+        const step = { type: newType, step_name: steps[index].querySelector('.step-name').value };
+        steps[index].outerHTML = renderFlowStepEditor(step, index);
       }
     }
-
-    function renderStepEditor(step, index) { return '<div class="step-item"><div class="step-header"><span class="step-number">步骤 ' + (index + 1) + '</span>' + (index > 0 ? '<button class="btn btn-danger btn-sm" onclick="removeStep(' + index + ')">删除</button>' : '') + '</div><div class="form-group"><label>名称</label><input type="text" class="step-name" value="' + (step.name || '') + '" placeholder="如: home, category"></div><div class="form-group"><label>URL (可选)</label><input type="text" class="step-url" value="' + (step.url || '') + '" placeholder="https://example.com"></div><div class="form-group"><label>等待时间 (ms)</label><input type="number" class="step-wait" value="' + (step.waitFor || 2000) + '" min="0"></div></div>'; }
-
-    function addStep() { const container = document.getElementById('stepsContainer'); const steps = container.querySelectorAll('.step-item'); const newIndex = steps.length; container.insertAdjacentHTML('beforeend', renderStepEditor({ name: '', url: '', actions: [] }, newIndex)); }
-
-    function removeStep(index) { const container = document.getElementById('stepsContainer'); const steps = container.querySelectorAll('.step-item'); if (steps[index]) steps[index].remove(); }
 
     async function saveSource() {
       const id = document.getElementById('sourceId').value.trim();
       const name = document.getElementById('sourceName').value.trim();
-      const site_type = document.getElementById('sourceSiteType').value;
-      const base_url = document.getElementById('sourceBaseUrl').value.trim();
+      const domain = document.getElementById('sourceDomain').value.trim();
+      const sort_order = parseInt(document.getElementById('sourceSortOrder').value) || 0;
       const prompt = document.getElementById('sourcePrompt').value.trim();
       if (!id || !name) { alert('ID 和名称不能为空'); return; }
 
-      const navType = document.querySelector('input[name="navType"]:checked').value;
-      const navigation = { type: navType };
-      if (navType === 'single-page') navigation.url = document.getElementById('navUrl').value.trim();
-      else if (navType === 'list-detail') { navigation.listUrl = document.getElementById('navListUrl').value.trim(); navigation.listSelector = document.getElementById('navListSelector').value.trim(); navigation.maxItems = parseInt(document.getElementById('navMaxItems').value) || 10; }
-      else if (navType === 'multi-step') { const steps = []; document.querySelectorAll('.step-item').forEach((el) => { steps.push({ name: el.querySelector('.step-name').value.trim(), url: el.querySelector('.step-url').value.trim(), waitFor: parseInt(el.querySelector('.step-wait').value) || 2000, actions: [] }); }); navigation.steps = steps; }
+      // 收集入口 URLs
+      const entryUrls = [];
+      document.querySelectorAll('.entry-url-input').forEach(input => {
+        const url = input.value.trim();
+        if (url) entryUrls.push(url);
+      });
+      if (entryUrls.length === 0) { alert('请至少添加一个入口 URL'); return; }
 
-      const content = { list: { selector: document.getElementById('listSelector').value.trim() }, detail: { useReadability: document.getElementById('useReadability').checked } };
-      const data = { id, name, site_type, base_url, prompt, navigation, content, transform: {}, filters: {}, enabled: true };
+      // 收集流程步骤
+      const flow = [];
+      document.querySelectorAll('.flow-step').forEach((el, index) => {
+        const type = el.querySelector('.step-type-select').value;
+        const step_name = el.querySelector('.step-name').value.trim();
+        const step = { type, step_name };
+
+        if (type === 'list_extraction') {
+          step.action = {
+            wait_for: el.querySelector('.action-wait-for')?.value.trim() || '',
+            item_selector: el.querySelector('.action-item-selector')?.value.trim() || '',
+            title_selector: el.querySelector('.action-title-selector')?.value.trim() || '',
+            link_selector: el.querySelector('.action-link-selector')?.value.trim() || '',
+            summary_selector: el.querySelector('.action-summary-selector')?.value.trim() || '',
+            cover_selector: el.querySelector('.action-cover-selector')?.value.trim() || ''
+          };
+          const paginationType = el.querySelector('.pagination-type')?.value;
+          if (paginationType) {
+            step.pagination = {
+              type: paginationType,
+              next_button_selector: el.querySelector('.pagination-next-btn')?.value.trim() || '',
+              max_pages: parseInt(el.querySelector('.pagination-max-pages')?.value) || 3,
+              wait_after: parseInt(el.querySelector('.pagination-wait')?.value) || 2000
+            };
+          }
+        } else if (type === 'detail_extraction') {
+          step.use_readability = el.querySelector('.use-readability')?.checked !== false;
+          step.fallback_selector = el.querySelector('.fallback-selector')?.value.trim() || '';
+        } else if (type === 'navigation') {
+          step.action = {
+            click: el.querySelector('.action-click')?.value.trim() || '',
+            scroll: el.querySelector('.action-scroll')?.value.trim() || '',
+            remove: el.querySelector('.action-remove')?.value.trim() || '',
+            wait_after: parseInt(el.querySelector('.action-wait-after')?.value) || 2000
+          };
+        }
+
+        flow.push(step);
+      });
+
+      if (flow.length === 0) { alert('请至少添加一个流程步骤'); return; }
+
+      const data = {
+        id, name, domain, entry_urls: entryUrls, flow, prompt,
+        transform: {}, filters: {}, enabled: true, sort_order
+      };
       const method = editingSourceId ? 'PUT' : 'POST';
       const url = editingSourceId ? API_BASE + '/sources/' + editingSourceId : API_BASE + '/sources';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken }, body: JSON.stringify(data) });
