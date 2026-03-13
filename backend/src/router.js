@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles, updateArticle, deleteArticle, deleteArticles, getArticlesByDate, getArticleById } from './storage/index.js';
+import { getAllNews, getNewsByDate, searchArticles as dbSearchArticles, getAllArticles, updateArticle, deleteArticle, deleteArticles, getArticlesByDate, getArticleById, getAllSources, getEnabledSources, getSourceById, createSource, updateSource, deleteSource, toggleSource } from './storage/index.js';
 import { runCrawl } from './scheduler/index.js';
 import config from './config.js';
 
@@ -119,6 +119,7 @@ router.get('/config', (req, res) => {
   res.json({
     crawlSources: config.crawlSources,
     schedule: config.schedule,
+    feishuEnabled: config.feishuEnabled !== false,
     feishuConfigured: !!config.feishuWebhook
   });
 });
@@ -151,6 +152,118 @@ router.post('/config/save', requireAuth, express.json(), (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ============ 数据源管理 API ============
+
+// 获取所有数据源
+router.get('/sources', (req, res) => {
+  const sources = getAllSources();
+  res.json({ sources });
+});
+
+// 获取启用的数据源
+router.get('/sources/enabled', (req, res) => {
+  const sources = getEnabledSources();
+  res.json({ sources });
+});
+
+// 获取单个数据源
+router.get('/sources/:id', (req, res) => {
+  const source = getSourceById(req.params.id);
+  if (!source) {
+    return res.status(404).json({ error: '数据源不存在' });
+  }
+  res.json(source);
+});
+
+// 创建数据源
+router.post('/sources', requireAuth, express.json(), (req, res) => {
+  const { id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order } = req.body;
+
+  if (!id || !name) {
+    return res.status(400).json({ error: 'ID 和名称不能为空' });
+  }
+
+  // 检查是否已存在
+  const existing = getSourceById(id);
+  if (existing) {
+    return res.status(400).json({ error: 'ID 已存在' });
+  }
+
+  const result = createSource({
+    id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order
+  });
+
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({ success: true, id });
+});
+
+// 更新数据源
+router.put('/sources/:id', requireAuth, express.json(), (req, res) => {
+  const result = updateSource(req.params.id, req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
+});
+
+// 删除数据源
+router.delete('/sources/:id', requireAuth, (req, res) => {
+  const result = deleteSource(req.params.id);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
+});
+
+// 切换数据源启用状态
+router.post('/sources/:id/toggle', requireAuth, (req, res) => {
+  const result = toggleSource(req.params.id);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true });
+});
+
+// 导入数据源
+router.post('/sources/import', requireAuth, express.json(), (req, res) => {
+  const { sources } = req.body;
+  if (!Array.isArray(sources) || sources.length === 0) {
+    return res.status(400).json({ error: '请提供数据源列表' });
+  }
+
+  let successCount = 0;
+  const errors = [];
+
+  for (const source of sources) {
+    if (!source.id || !source.name) {
+      errors.push(`缺少 ID 或名称: ${JSON.stringify(source)}`);
+      continue;
+    }
+
+    const existing = getSourceById(source.id);
+    if (existing) {
+      const result = updateSource(source.id, source);
+      if (result.success) successCount++;
+      else errors.push(`更新失败: ${source.id} - ${result.error}`);
+    } else {
+      const result = createSource(source);
+      if (result.success) successCount++;
+      else errors.push(`创建失败: ${source.id} - ${result.error}`);
+    }
+  }
+
+  res.json({ success: true, count: successCount, errors });
+});
+
+// 导出数据源
+router.get('/sources/export', (req, res) => {
+  const sources = getAllSources();
+  res.json({ sources });
 });
 
 export default router;

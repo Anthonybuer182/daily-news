@@ -38,6 +38,36 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_articles_date ON articles(date);
   CREATE INDEX IF NOT EXISTS idx_articles_source_name ON articles(source_name);
   CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
+
+  -- 数据源配置表
+  CREATE TABLE IF NOT EXISTS sources (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    site_type VARCHAR(20) DEFAULT 'news',
+    base_url VARCHAR(500),
+
+    -- 导航配置 (JSON)
+    navigation TEXT DEFAULT '{}',
+
+    -- 内容提取配置 (JSON)
+    content TEXT DEFAULT '{}',
+
+    -- 数据转换配置 (JSON)
+    transform TEXT DEFAULT '{}',
+
+    -- 过滤规则 (JSON)
+    filters TEXT DEFAULT '{}',
+
+    -- LLM 提示词
+    prompt TEXT DEFAULT '',
+
+    -- 排序
+    sort_order INTEGER DEFAULT 0,
+
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export function saveArticles(articles, analysis = '') {
@@ -235,6 +265,179 @@ export function getNewsByDate(date) {
 // 导出 analysis 相关的占位函数（保持兼容）
 export function saveNews(date, articles, analysis = '') {
   return saveArticles(articles, analysis);
+}
+
+// ============ 数据源配置管理 ============
+
+// 解析 JSON 字段的辅助函数
+function parseJsonField(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+// 获取所有数据源
+export function getAllSources() {
+  const rows = db.prepare('SELECT * FROM sources ORDER BY sort_order ASC, created_at DESC').all();
+  return rows.map(row => ({
+    ...row,
+    enabled: row.enabled === 1,
+    navigation: parseJsonField(row.navigation),
+    content: parseJsonField(row.content),
+    transform: parseJsonField(row.transform),
+    filters: parseJsonField(row.filters)
+  }));
+}
+
+// 获取启用的数据源
+export function getEnabledSources() {
+  const rows = db.prepare('SELECT * FROM sources WHERE enabled = 1 ORDER BY sort_order ASC').all();
+  return rows.map(row => ({
+    ...row,
+    enabled: true,
+    navigation: parseJsonField(row.navigation),
+    content: parseJsonField(row.content),
+    transform: parseJsonField(row.transform),
+    filters: parseJsonField(row.filters)
+  }));
+}
+
+// 获取单个数据源
+export function getSourceById(id) {
+  const row = db.prepare('SELECT * FROM sources WHERE id = ?').get(id);
+  if (!row) return null;
+  return {
+    ...row,
+    enabled: row.enabled === 1,
+    navigation: parseJsonField(row.navigation),
+    content: parseJsonField(row.content),
+    transform: parseJsonField(row.transform),
+    filters: parseJsonField(row.filters)
+  };
+}
+
+// 创建数据源
+export function createSource(data) {
+  const {
+    id,
+    name,
+    enabled = true,
+    site_type = 'news',
+    base_url = '',
+    navigation = {},
+    content = {},
+    transform = {},
+    filters = {},
+    prompt = '',
+    sort_order = 0
+  } = data;
+
+  try {
+    db.prepare(`
+      INSERT INTO sources (id, name, enabled, site_type, base_url, navigation, content, transform, filters, prompt, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      name,
+      enabled ? 1 : 0,
+      site_type,
+      base_url,
+      JSON.stringify(navigation),
+      JSON.stringify(content),
+      JSON.stringify(transform),
+      JSON.stringify(filters),
+      prompt,
+      sort_order
+    );
+    return { success: true, id };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// 更新数据源
+export function updateSource(id, data) {
+  const fields = [];
+  const values = [];
+
+  if (data.name !== undefined) {
+    fields.push('name = ?');
+    values.push(data.name);
+  }
+  if (data.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(data.enabled ? 1 : 0);
+  }
+  if (data.site_type !== undefined) {
+    fields.push('site_type = ?');
+    values.push(data.site_type);
+  }
+  if (data.base_url !== undefined) {
+    fields.push('base_url = ?');
+    values.push(data.base_url);
+  }
+  if (data.navigation !== undefined) {
+    fields.push('navigation = ?');
+    values.push(JSON.stringify(data.navigation));
+  }
+  if (data.content !== undefined) {
+    fields.push('content = ?');
+    values.push(JSON.stringify(data.content));
+  }
+  if (data.transform !== undefined) {
+    fields.push('transform = ?');
+    values.push(JSON.stringify(data.transform));
+  }
+  if (data.filters !== undefined) {
+    fields.push('filters = ?');
+    values.push(JSON.stringify(data.filters));
+  }
+  if (data.prompt !== undefined) {
+    fields.push('prompt = ?');
+    values.push(data.prompt);
+  }
+  if (data.sort_order !== undefined) {
+    fields.push('sort_order = ?');
+    values.push(data.sort_order);
+  }
+
+  if (fields.length === 0) {
+    return { success: false, error: '没有要更新的字段' };
+  }
+
+  fields.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+
+  try {
+    db.prepare(`UPDATE sources SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// 删除数据源
+export function deleteSource(id) {
+  try {
+    db.prepare('DELETE FROM sources WHERE id = ?').run(id);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// 切换数据源启用状态
+export function toggleSource(id) {
+  try {
+    db.prepare('UPDATE sources SET enabled = NOT enabled, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 export default db;
